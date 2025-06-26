@@ -1,0 +1,112 @@
+version: "3.8"
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: task-scheduler-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - task-network
+
+  api:
+    build: .
+    container_name: task-scheduler-api
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - REDIS_URL=redis://redis:6379
+      - PORT=3000
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - task-network
+    restart: unless-stopped
+
+  worker-1:
+    build: .
+    container_name: task-scheduler-worker-1
+    command: ["node", "src/worker.js"]
+    environment:
+      - NODE_ENV=production
+      - REDIS_URL=redis://redis:6379
+      - WORKER_ID=worker-1
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - task-network
+    restart: unless-stopped
+
+  worker-2:
+    build: .
+    container_name: task-scheduler-worker-2
+    command: ["node", "src/worker.js"]
+    environment:
+      - NODE_ENV=production
+      - REDIS_URL=redis://redis:6379
+      - WORKER_ID=worker-2
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - task-network
+    restart: unless-stopped
+
+  scheduler:
+    build: .
+    container_name: task-scheduler-scheduler
+    command: ["node", "src/scheduler.js"]
+    environment:
+      - NODE_ENV=production
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - task-network
+    restart: unless-stopped
+
+  monitor:
+    build: .
+    container_name: task-scheduler-monitor
+    command: ["node", "src/monitor.js"]
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - REDIS_URL=redis://redis:6379
+      - MONITOR_PORT=3001
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - task-network
+    restart: unless-stopped
+
+volumes:
+  redis_data:
+
+networks:
+  task-network:
+    driver: bridge
